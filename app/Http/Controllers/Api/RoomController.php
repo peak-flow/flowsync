@@ -150,9 +150,26 @@ class RoomController extends Controller
 
     private function getIceServers(): array
     {
-        return [
-            ['urls' => 'stun:stun.l.google.com:19302'],
-            ['urls' => 'stun:stun1.l.google.com:19302'],
+        $servers = [
+            ['urls' => 'stun:flowmeet.us:3478'],
         ];
+
+        if (config('app.turn_url') && config('app.turn_username')) {
+            $servers[] = [
+                'urls' => config('app.turn_url'),
+                'username' => config('app.turn_username'),
+                'credential' => config('app.turn_credential'),
+            ];
+        }
+
+        if (config('app.turns_url') && config('app.turn_username')) {
+            $servers[] = [
+                'urls' => config('app.turns_url'),
+                'username' => config('app.turn_username'),
+                'credential' => config('app.turn_credential'),
+            ];
+        }
+
+        return $servers;
     }
 }

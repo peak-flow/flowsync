@@ -23,7 +23,7 @@ class RoomViewController extends Controller
 
         return view('lobby', [
             'room' => $room,
-            'signalingUrl' => env('SIGNALING_URL', 'http://localhost:3001'),
+            'signalingUrl' => config('app.signaling_url'),
         ]);
     }
 
@@ -37,7 +37,7 @@ class RoomViewController extends Controller
 
         return view('room', [
             'room' => $room,
-            'signalingUrl' => env('SIGNALING_URL', 'http://localhost:3001'),
+            'signalingUrl' => config('app.signaling_url'),
         ]);
     }
 }

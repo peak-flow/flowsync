@@ -123,4 +123,16 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | WebRTC Configuration
+    |--------------------------------------------------------------------------
+    */
+
+    'signaling_url' => env('SIGNALING_URL', 'ws://localhost:3001'),
+    'turn_url' => env('TURN_URL'),
+    'turns_url' => env('TURNS_URL'),
+    'turn_username' => env('TURN_USERNAME'),
+    'turn_credential' => env('TURN_CREDENTIAL'),
+
 ];
