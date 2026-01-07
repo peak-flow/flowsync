@@ -1,4 +1,10 @@
 <x-layouts.app title="{{ $room->name ?? $room->code }} - FlowSync">
+    <style>
+        .video-container { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .video-focused { grid-column: span 2 / span 2; grid-row: span 2 / span 2; }
+        @media (min-width: 1024px) { .video-focused { grid-column: span 3 / span 3; } }
+        @media (max-width: 640px) { .video-focused { grid-column: span 1 / span 1; grid-row: span 1 / span 1; } }
+    </style>
     <div class="h-full flex flex-col" x-data="roomApp()" x-init="init()">
         <!-- Header -->
         <header class="bg-gray-800 px-4 py-2 flex items-center justify-between">
@@ -35,26 +41,46 @@
             <div class="flex-1 p-4 overflow-auto">
                 <div class="grid gap-4" :class="gridClass">
                     <!-- Local Video -->
-                    <div class="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
+                    <div
+                        class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 transition-all"
+                        :class="focusedPeer === 'local' ? 'video-focused border-blue-500 shadow-xl shadow-blue-500/20' : 'border-transparent hover:border-gray-600'"
+                        @click="toggleFocus('local')"
+                    >
                         <video x-ref="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
-                        <div class="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-sm">
+                        <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-sm flex items-center gap-2">
+                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
                             <span x-text="displayName"></span> (You)
+                            <span x-show="focusedPeer === 'local'" class="text-blue-400 text-xs font-bold uppercase">Focused</span>
                         </div>
                         <div x-show="!videoEnabled" class="absolute inset-0 flex items-center justify-center bg-gray-900">
                             <div class="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center text-2xl" x-text="displayName.charAt(0).toUpperCase()"></div>
+                        </div>
+                        <!-- Hover Overlay -->
+                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl" x-text="focusedPeer === 'local' ? 'Exit Focus' : 'Focus'"></span>
                         </div>
                     </div>
 
                     <!-- Remote Videos -->
                     <template x-for="(peer, peerId) in peers" :key="peerId">
-                        <div class="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
+                        <div
+                            class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 transition-all"
+                            :class="focusedPeer === peerId ? 'video-focused border-blue-500 shadow-xl shadow-blue-500/20' : 'border-transparent hover:border-gray-600'"
+                            @click="toggleFocus(peerId)"
+                        >
                             <video :id="'video-' + peerId" autoplay playsinline class="w-full h-full object-cover"></video>
-                            <div class="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-sm">
+                            <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-sm flex items-center gap-2">
+                                <div class="w-2 h-2 rounded-full bg-green-500"></div>
                                 <span x-text="peer.displayName"></span>
                                 <span x-show="peer.handRaised" class="ml-1">&#9995;</span>
+                                <span x-show="focusedPeer === peerId" class="text-blue-400 text-xs font-bold uppercase">Focused</span>
                             </div>
                             <div x-show="presenter === peerId" class="absolute top-2 right-2 bg-blue-600 px-2 py-1 rounded text-xs">
                                 Presenting
+                            </div>
+                            <!-- Hover Overlay -->
+                            <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl" x-text="focusedPeer === peerId ? 'Exit Focus' : 'Focus'"></span>
                             </div>
                         </div>
                     </template>
@@ -153,6 +179,7 @@
                 presenter: null,
                 isPresenting: false,
                 handRaised: false,
+                focusedPeer: null,
 
                 timer: { remaining: 0, type: 'work', status: 'stopped' },
 
@@ -162,11 +189,16 @@
 
                 get gridClass() {
                     const count = Object.keys(this.peers).length + 1;
+                    if (this.focusedPeer) return 'grid-cols-2 lg:grid-cols-4';
                     if (count === 1) return 'grid-cols-1 max-w-2xl mx-auto';
                     if (count === 2) return 'grid-cols-2';
                     if (count <= 4) return 'grid-cols-2';
                     if (count <= 6) return 'grid-cols-3';
                     return 'grid-cols-4';
+                },
+
+                toggleFocus(peerId) {
+                    this.focusedPeer = this.focusedPeer === peerId ? null : peerId;
                 },
 
                 async init() {
