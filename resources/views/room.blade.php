@@ -142,6 +142,7 @@
                 displayName: sessionStorage.getItem('room_{{ $room->code }}_name') || 'Guest',
                 token: sessionStorage.getItem('room_{{ $room->code }}_token'),
                 isCreator: sessionStorage.getItem('room_{{ $room->code }}_creator') === 'true',
+                iceServers: JSON.parse(sessionStorage.getItem('room_{{ $room->code }}_iceServers') || '[]'),
 
                 localStream: null,
                 videoEnabled: sessionStorage.getItem('room_{{ $room->code }}_video') !== 'false',
@@ -174,6 +175,7 @@
                         return;
                     }
 
+                    console.log('ICE servers:', this.iceServers);
                     await this.startLocalStream();
                     this.connectSocket();
                 },
@@ -307,9 +309,8 @@
                         initiator,
                         trickle: true,
                         config: {
-                            iceServers: [
+                            iceServers: this.iceServers.length ? this.iceServers : [
                                 { urls: 'stun:stun.l.google.com:19302' },
-                                { urls: 'stun:stun1.l.google.com:19302' },
                             ]
                         }
                     };

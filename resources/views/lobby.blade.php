@@ -223,6 +223,7 @@
 
                             token = data.signaling_token;
                             sessionStorage.setItem(`room_{{ $room->code }}_token`, token);
+                            sessionStorage.setItem(`room_{{ $room->code }}_iceServers`, JSON.stringify(data.ice_servers || []));
                         }
 
                         // Save preferences
