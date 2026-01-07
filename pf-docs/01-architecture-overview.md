@@ -4,12 +4,12 @@
 | Field | Value |
 |-------|-------|
 | Repository | `cowork-claude` |
-| Commit | `NO_COMMITS` (uncommitted) |
-| Documented | `2026-01-01` |
+| Commit | `ffcea9a` |
+| Documented | `2026-01-07` |
 | Verification Status | `Verified` |
 
 ## Verification Summary
-- [VERIFIED]: 52 claims
+- [VERIFIED]: 56 claims
 - [INFERRED]: 3 claims
 - [NOT_FOUND]: 2 items
 - [ASSUMED]: 2 items
@@ -158,25 +158,49 @@ Used for:
 - Presenter tracking
 - Participant count
 
-### STUN Servers
-[VERIFIED: app/Http/Controllers/Api/RoomController.php:153-156]
+### ICE Servers (STUN/TURN)
+[VERIFIED: app/Http/Controllers/Api/RoomController.php:151-174]
 ```php
-return [
-    ['urls' => 'stun:stun.l.google.com:19302'],
-    ['urls' => 'stun:stun1.l.google.com:19302'],
-];
+private function getIceServers(): array
+{
+    $servers = [
+        ['urls' => 'stun:flowmeet.us:3478'],
+    ];
+
+    if (config('app.turn_url') && config('app.turn_username')) {
+        $servers[] = [
+            'urls' => config('app.turn_url'),
+            'username' => config('app.turn_username'),
+            'credential' => config('app.turn_credential'),
+        ];
+    }
+    // ... also adds TURNS if configured
+    return $servers;
+}
 ```
 
-**Also configured in frontend:**
-[VERIFIED: resources/views/room.blade.php:310-313]
+**Configuration (config/app.php):**
+[VERIFIED: config/app.php:132-136]
+```php
+'signaling_url' => env('SIGNALING_URL', 'ws://localhost:3001'),
+'turn_url' => env('TURN_URL'),
+'turns_url' => env('TURNS_URL'),
+'turn_username' => env('TURN_USERNAME'),
+'turn_credential' => env('TURN_CREDENTIAL'),
+```
+
+**Frontend uses ICE servers from API:**
+[VERIFIED: resources/views/room.blade.php:145]
+ICE servers are stored in sessionStorage by the lobby page and retrieved via `iceServers` property.
+[VERIFIED: resources/views/room.blade.php:312-314]
 ```javascript
 config: {
-    iceServers: [
+    iceServers: this.iceServers.length ? this.iceServers : [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
     ]
 }
 ```
+Falls back to Google STUN if no servers provided.
 
 ### NPM Packages (Frontend)
 [VERIFIED: package.json:20-23]
@@ -207,12 +231,11 @@ WebRTC requires HTTPS for `getUserMedia()`. Local development uses ngrok to tunn
 - Signaling server runs on port 3001 [VERIFIED: signaling/.env:1]
 
 **Signaling Server CORS:**
-[VERIFIED: signaling/server.js:13-15]
+[VERIFIED: signaling/server.js:28-29]
 ```javascript
-cors: {
-    origin: '*',  // Allow all origins for ngrok
-    methods: ['GET', 'POST'],
-},
+const io = new Server(PORT, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
 ```
 CORS is configured to allow all origins to support ngrok tunnels with dynamic subdomains.
 
@@ -220,9 +243,11 @@ CORS is configured to allow all origins to support ngrok tunnels with dynamic su
 
 | File | Purpose | Evidence |
 |------|---------|----------|
-| `signaling/.env` | Runtime config (PORT, REDIS_HOST, REDIS_PORT, LARAVEL_URL) | [VERIFIED: signaling/.env] |
+| `signaling/.env` | Runtime config (PORT, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_PREFIX, LARAVEL_URL) | [VERIFIED: signaling/.env] |
 | `signaling/.env.example` | Template for .env | [VERIFIED: signaling/.env.example] |
 | `signaling/.gitignore` | Excludes node_modules/, .env, certs/ | [VERIFIED: signaling/.gitignore] |
+
+**Note:** The signaling server was moved to a separate repository (commit 39b197f) but a copy remains in the local `signaling/` folder for reference.
 
 ---
 
@@ -238,12 +263,9 @@ $request->validate([
 ```
 Validation is inline in controller methods. Should use Form Request classes per Laravel conventions.
 
-### Direct env() Usage in Controllers
-[VERIFIED: app/Http/Controllers/RoomViewController.php:26-27]
-```php
-'signalingUrl' => env('SIGNALING_URL', 'http://localhost:3001'),
-```
-Uses `env()` directly instead of config value. Should use `config('app.signaling_url')`.
+### ~~Direct env() Usage in Controllers~~ (FIXED)
+[RESOLVED: commit a45dc8e] RoomViewController now uses `config('app.signaling_url')` instead of `env()`.
+[VERIFIED: app/Http/Controllers/RoomViewController.php:26,40]
 
 ### IP-Based Creator Authorization
 [VERIFIED: app/Http/Controllers/Api/RoomController.php:102]
@@ -255,12 +277,14 @@ Room deletion uses IP address for authorization, which is unreliable (proxies, d
 ### No CSRF Protection on API Routes
 [INFERRED] API routes don't use CSRF middleware (standard for Sanctum APIs, but no auth on room endpoints).
 
-### Redis Prefix Mismatch Documentation
-[VERIFIED: signaling/server.js:41]
+### Redis Prefix Configuration
+[VERIFIED: signaling/server.js:7,19,22]
 ```javascript
-const valid = await redis.get(`flowsync-database-room:${room_code}:token:${token}`);
+const REDIS_PREFIX = process.env.REDIS_PREFIX || '';
+const key = (suffix) => `${REDIS_PREFIX}${suffix}`;
+const kToken = (room, token) => key(`room:${room}:token:${token}`);
 ```
-Node.js expects `flowsync-database-` prefix. Laravel Redis prefix must match.
+The signaling server now uses a configurable `REDIS_PREFIX` env var. This MUST match Laravel's Redis prefix (e.g., `flowsync-database-` when `APP_NAME=FlowSync`).
 
 ### Unused RoomSession Model
 [VERIFIED: app/Models/RoomSession.php] Model exists but no code creates RoomSession records.
@@ -364,23 +388,33 @@ $table->timestamp('left_at')->nullable();
 
 ## 10. Redis Data Structures
 
-[VERIFIED: signaling/server.js and app/Http/Controllers/Api/RoomController.php]
+[VERIFIED: signaling/server.js:21-26 and app/Http/Controllers/Api/RoomController.php:147]
 
 **Important:** Laravel applies a prefix to all Redis keys. The prefix is configured in `config/database.php:151`:
 ```php
 'prefix' => env('REDIS_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-database-'),
 ```
 
-With `APP_NAME=FlowSync`, keys become `flowsync-database-{key}`. The signaling server must use this prefix.
+With `APP_NAME=FlowSync`, keys become `flowsync-database-{key}`. The signaling server must use `REDIS_PREFIX` env var.
 
-| Key Pattern (without prefix) | Full Key (with prefix) | Type | TTL | Purpose |
-|------------------------------|------------------------|------|-----|---------|
-| `room:{code}:token:{uuid}` | `flowsync-database-room:{code}:token:{uuid}` | String | 24h | Session token validation |
-| `room:{code}:participants` | `flowsync-database-room:{code}:participants` | Set | - | Active participant socket IDs |
-| `room:{code}:timer` | `flowsync-database-room:{code}:timer` | Hash | - | Timer state (status, type, remaining, started_at) |
-| `room:{code}:presenter` | `flowsync-database-room:{code}:presenter` | String | - | Current presenter socket ID |
+**Key Helper Functions (signaling/server.js):**
+```javascript
+const kToken = (room, token) => key(`room:${room}:token:${token}`);
+const kParticipantIds = (room) => key(`room:${room}:participants`);
+const kParticipantMeta = (room) => key(`room:${room}:participants_meta`);
+const kTimer = (room) => key(`room:${room}:timer`);
+const kPresenter = (room) => key(`room:${room}:presenter`);
+```
 
-[VERIFIED: signaling/server.js:41] Node.js validates with prefix: `flowsync-database-room:${room_code}:token:${token}`
+| Key Pattern (without prefix) | Type | TTL | Purpose |
+|------------------------------|------|-----|---------|
+| `room:{code}:token:{uuid}` | String | 24h | Session token validation (set by Laravel) |
+| `room:{code}:participants` | Set | - | Active participant socket IDs |
+| `room:{code}:participants_meta` | Hash | - | Socket ID → display_name mapping |
+| `room:{code}:timer` | Hash | - | Timer state (status, type, remaining, started_at, paused_at) |
+| `room:{code}:presenter` | String | - | Current presenter socket ID |
+
+[VERIFIED: signaling/server.js:43] Token validation uses key helper with configurable prefix
 
 ---
 
@@ -389,18 +423,18 @@ With `APP_NAME=FlowSync`, keys become `flowsync-database-{key}`. The signaling s
 ### Client to Server
 | Event | Payload | Handler |
 |-------|---------|---------|
-| `join-room` | `{room_code, token, display_name}` | [VERIFIED: signaling/server.js:37-84] |
-| `offer` | `{to, offer}` | [VERIFIED: signaling/server.js:87-92] |
-| `answer` | `{to, answer}` | [VERIFIED: signaling/server.js:94-99] |
-| `ice-candidate` | `{to, candidate}` | [VERIFIED: signaling/server.js:101-106] |
-| `start-timer` | `{type}` | [VERIFIED: signaling/server.js:109-126] |
-| `pause-timer` | `{}` | [VERIFIED: signaling/server.js:128-148] |
-| `resume-timer` | `{}` | [VERIFIED: signaling/server.js:150-167] |
-| `reset-timer` | `{}` | [VERIFIED: signaling/server.js:169-175] |
-| `start-presenting` | `{}` | [VERIFIED: signaling/server.js:178-184] |
-| `stop-presenting` | `{}` | [VERIFIED: signaling/server.js:186-195] |
-| `raise-hand` | `{raised}` | [VERIFIED: signaling/server.js:198-206] |
-| `chat-message` | `{message, type}` | [VERIFIED: signaling/server.js:209-220] |
+| `join-room` | `{room_code, token, display_name}` | [VERIFIED: signaling/server.js:35-90] |
+| `offer` | `{to, offer}` | [VERIFIED: signaling/server.js:93-96] |
+| `answer` | `{to, answer}` | [VERIFIED: signaling/server.js:98-101] |
+| `ice-candidate` | `{to, candidate}` | [VERIFIED: signaling/server.js:103-106] |
+| `start-timer` | `{type}` | [VERIFIED: signaling/server.js:109-130] |
+| `pause-timer` | `{}` | [VERIFIED: signaling/server.js:132-157] |
+| `resume-timer` | `{}` | [VERIFIED: signaling/server.js:159-183] |
+| `reset-timer` | `{}` | [VERIFIED: signaling/server.js:185-195] |
+| `start-presenting` | `{}` | [VERIFIED: signaling/server.js:198-208] |
+| `stop-presenting` | `{}` | [VERIFIED: signaling/server.js:210-223] |
+| `raise-hand` | `{raised}` | [VERIFIED: signaling/server.js:226-231] |
+| `chat-message` | `{message, type}` | [VERIFIED: signaling/server.js:234-245] |
 
 ### Server to Client
 | Event | Payload |
