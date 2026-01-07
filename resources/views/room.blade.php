@@ -1,9 +1,6 @@
 <x-layouts.app title="{{ $room->name ?? $room->code }} - FlowSync">
     <style>
         .video-container { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .video-focused { grid-column: span 2 / span 2; grid-row: span 2 / span 2; }
-        @media (min-width: 1024px) { .video-focused { grid-column: span 3 / span 3; } }
-        @media (max-width: 640px) { .video-focused { grid-column: span 1 / span 1; grid-row: span 1 / span 1; } }
     </style>
     <div class="h-full flex flex-col" x-data="roomApp()" x-init="init()">
         <!-- Header -->
@@ -38,53 +35,126 @@
         <!-- Main Content -->
         <div class="flex-1 flex overflow-hidden">
             <!-- Video Grid -->
-            <div class="flex-1 p-4 overflow-auto">
-                <div class="grid gap-4" :class="gridClass">
-                    <!-- Local Video -->
-                    <div
-                        class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 transition-all"
-                        :class="focusedPeer === 'local' ? 'video-focused border-blue-500 shadow-xl shadow-blue-500/20' : 'border-transparent hover:border-gray-600'"
-                        @click="toggleFocus('local')"
-                    >
-                        <video x-ref="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
-                        <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-sm flex items-center gap-2">
-                            <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                            <span x-text="displayName"></span> (You)
-                            <span x-show="focusedPeer === 'local'" class="text-blue-400 text-xs font-bold uppercase">Focused</span>
+            <div class="flex-1 p-4 overflow-auto flex flex-col">
+                <!-- Spotlight Layout (when focused) -->
+                <template x-if="focusedPeer">
+                    <div class="flex-1 flex flex-col gap-4">
+                        <!-- Main Focused Video -->
+                        <div class="flex-1 min-h-0">
+                            <!-- Focused: Local Video -->
+                            <div
+                                x-show="focusedPeer === 'local'"
+                                class="video-container h-full relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer group border-2 border-blue-500 shadow-xl shadow-blue-500/20"
+                                @click="toggleFocus('local')"
+                            >
+                                <video x-ref="localVideoFocused" autoplay muted playsinline class="w-full h-full object-contain bg-black"></video>
+                                <div class="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded text-sm flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                    <span x-text="displayName"></span> (You)
+                                    <span class="text-blue-400 text-xs font-bold uppercase">Focused</span>
+                                </div>
+                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl">Exit Focus</span>
+                                </div>
+                            </div>
+                            <!-- Focused: Remote Video -->
+                            <template x-for="(peer, peerId) in peers" :key="'focused-' + peerId">
+                                <div
+                                    x-show="focusedPeer === peerId"
+                                    class="video-container h-full relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer group border-2 border-blue-500 shadow-xl shadow-blue-500/20"
+                                    @click="toggleFocus(peerId)"
+                                >
+                                    <video :id="'video-focused-' + peerId" autoplay playsinline class="w-full h-full object-contain bg-black"></video>
+                                    <div class="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded text-sm flex items-center gap-2">
+                                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                        <span x-text="peer.displayName"></span>
+                                        <span x-show="peer.handRaised" class="ml-1">&#9995;</span>
+                                        <span class="text-blue-400 text-xs font-bold uppercase">Focused</span>
+                                    </div>
+                                    <div x-show="presenter === peerId" class="absolute top-2 right-2 bg-blue-600 px-2 py-1 rounded text-xs">
+                                        Presenting
+                                    </div>
+                                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                        <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl">Exit Focus</span>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
-                        <div x-show="!videoEnabled" class="absolute inset-0 flex items-center justify-center bg-gray-900">
-                            <div class="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center text-2xl" x-text="displayName.charAt(0).toUpperCase()"></div>
-                        </div>
-                        <!-- Hover Overlay -->
-                        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                            <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl" x-text="focusedPeer === 'local' ? 'Exit Focus' : 'Focus'"></span>
+                        <!-- Thumbnail Row -->
+                        <div class="flex gap-2 justify-center flex-wrap">
+                            <!-- Thumbnail: Local (if not focused) -->
+                            <div
+                                x-show="focusedPeer !== 'local'"
+                                class="video-container w-32 h-20 relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer group border-2 border-transparent hover:border-gray-500 shrink-0"
+                                @click="toggleFocus('local')"
+                            >
+                                <video x-ref="localVideoThumb" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                                <div class="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-xs flex items-center gap-1">
+                                    <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                                    <span>You</span>
+                                </div>
+                            </div>
+                            <!-- Thumbnails: Remote (if not focused) -->
+                            <template x-for="(peer, peerId) in peers" :key="'thumb-' + peerId">
+                                <div
+                                    x-show="focusedPeer !== peerId"
+                                    class="video-container w-32 h-20 relative bg-gray-800 rounded-lg overflow-hidden cursor-pointer group border-2 border-transparent hover:border-gray-500 shrink-0"
+                                    @click="toggleFocus(peerId)"
+                                >
+                                    <video :id="'video-thumb-' + peerId" autoplay playsinline class="w-full h-full object-cover"></video>
+                                    <div class="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-xs flex items-center gap-1">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                                        <span x-text="peer.displayName.split(' ')[0]"></span>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
                     </div>
+                </template>
 
-                    <!-- Remote Videos -->
-                    <template x-for="(peer, peerId) in peers" :key="peerId">
+                <!-- Normal Grid Layout (no focus) -->
+                <template x-if="!focusedPeer">
+                    <div class="grid gap-4" :class="gridClass">
+                        <!-- Local Video -->
                         <div
-                            class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 transition-all"
-                            :class="focusedPeer === peerId ? 'video-focused border-blue-500 shadow-xl shadow-blue-500/20' : 'border-transparent hover:border-gray-600'"
-                            @click="toggleFocus(peerId)"
+                            class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 border-transparent hover:border-gray-600"
+                            @click="toggleFocus('local')"
                         >
-                            <video :id="'video-' + peerId" autoplay playsinline class="w-full h-full object-cover"></video>
+                            <video x-ref="localVideo" autoplay muted playsinline class="w-full h-full object-cover"></video>
                             <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-sm flex items-center gap-2">
                                 <div class="w-2 h-2 rounded-full bg-green-500"></div>
-                                <span x-text="peer.displayName"></span>
-                                <span x-show="peer.handRaised" class="ml-1">&#9995;</span>
-                                <span x-show="focusedPeer === peerId" class="text-blue-400 text-xs font-bold uppercase">Focused</span>
+                                <span x-text="displayName"></span> (You)
                             </div>
-                            <div x-show="presenter === peerId" class="absolute top-2 right-2 bg-blue-600 px-2 py-1 rounded text-xs">
-                                Presenting
+                            <div x-show="!videoEnabled" class="absolute inset-0 flex items-center justify-center bg-gray-900">
+                                <div class="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center text-2xl" x-text="displayName.charAt(0).toUpperCase()"></div>
                             </div>
-                            <!-- Hover Overlay -->
                             <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl" x-text="focusedPeer === peerId ? 'Exit Focus' : 'Focus'"></span>
+                                <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl">Focus</span>
                             </div>
                         </div>
-                    </template>
-                </div>
+
+                        <!-- Remote Videos -->
+                        <template x-for="(peer, peerId) in peers" :key="peerId">
+                            <div
+                                class="video-container relative bg-gray-800 rounded-lg overflow-hidden aspect-video cursor-pointer group border-2 border-transparent hover:border-gray-600"
+                                @click="toggleFocus(peerId)"
+                            >
+                                <video :id="'video-' + peerId" autoplay playsinline class="w-full h-full object-cover"></video>
+                                <div class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm px-2 py-1 rounded text-sm flex items-center gap-2">
+                                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                                    <span x-text="peer.displayName"></span>
+                                    <span x-show="peer.handRaised" class="ml-1">&#9995;</span>
+                                </div>
+                                <div x-show="presenter === peerId" class="absolute top-2 right-2 bg-blue-600 px-2 py-1 rounded text-xs">
+                                    Presenting
+                                </div>
+                                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span class="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-sm shadow-xl">Focus</span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
             </div>
 
             <!-- Sidebar (Chat) -->
@@ -199,6 +269,15 @@
 
                 toggleFocus(peerId) {
                     this.focusedPeer = this.focusedPeer === peerId ? null : peerId;
+                    // Reassign streams after DOM updates
+                    this.$nextTick(() => {
+                        this.assignLocalStream();
+                        Object.entries(this.peers).forEach(([id, peer]) => {
+                            if (peer.stream) {
+                                this.assignRemoteStream(id, peer.stream);
+                            }
+                        });
+                    });
                 },
 
                 async init() {
@@ -226,12 +305,31 @@
                             video: this.videoEnabled,
                             audio: this.audioEnabled,
                         });
-                        this.$refs.localVideo.srcObject = this.localStream;
+                        this.assignLocalStream();
                     } catch (e) {
                         console.error('Failed to get local stream:', e);
                         this.videoEnabled = false;
                         this.audioEnabled = false;
                     }
+                },
+
+                assignLocalStream() {
+                    this.$nextTick(() => {
+                        if (this.$refs.localVideo) this.$refs.localVideo.srcObject = this.localStream;
+                        if (this.$refs.localVideoFocused) this.$refs.localVideoFocused.srcObject = this.localStream;
+                        if (this.$refs.localVideoThumb) this.$refs.localVideoThumb.srcObject = this.localStream;
+                    });
+                },
+
+                assignRemoteStream(peerId, stream) {
+                    this.$nextTick(() => {
+                        const video = document.getElementById('video-' + peerId);
+                        const videoFocused = document.getElementById('video-focused-' + peerId);
+                        const videoThumb = document.getElementById('video-thumb-' + peerId);
+                        if (video) video.srcObject = stream;
+                        if (videoFocused) videoFocused.srcObject = stream;
+                        if (videoThumb) videoThumb.srcObject = stream;
+                    });
                 },
 
                 connectSocket() {
@@ -367,12 +465,8 @@
 
                     peer.on('stream', (stream) => {
                         console.log('Got stream from:', peerId);
-                        this.$nextTick(() => {
-                            const video = document.getElementById('video-' + peerId);
-                            if (video) {
-                                video.srcObject = stream;
-                            }
-                        });
+                        this.peers[peerId].stream = stream;
+                        this.assignRemoteStream(peerId, stream);
                     });
 
                     peer.on('connect', () => {
