@@ -225,6 +225,58 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
                 </svg>
             </button>
+
+            <button @click="openSettings" :class="showSettings ? 'bg-blue-600' : 'bg-gray-700'"
+                class="p-3 rounded-full hover:bg-opacity-80 transition" title="Settings">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Settings Modal -->
+        <div x-show="showSettings" x-cloak
+            class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+            @click.self="showSettings = false">
+            <div class="bg-gray-800 rounded-lg p-6 w-full max-w-md mx-4 shadow-xl">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">Settings</h2>
+                    <button @click="showSettings = false" class="text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Camera Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm text-gray-400 mb-2">Camera</label>
+                    <select x-model="selectedVideoDevice" @change="switchVideoDevice"
+                        class="w-full bg-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select camera...</option>
+                        <template x-for="device in devices.video" :key="device.deviceId">
+                            <option :value="device.deviceId" x-text="device.label || 'Camera ' + (devices.video.indexOf(device) + 1)"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <!-- Microphone Selection -->
+                <div class="mb-4">
+                    <label class="block text-sm text-gray-400 mb-2">Microphone</label>
+                    <select x-model="selectedAudioDevice" @change="switchAudioDevice"
+                        class="w-full bg-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select microphone...</option>
+                        <template x-for="device in devices.audio" :key="device.deviceId">
+                            <option :value="device.deviceId" x-text="device.label || 'Microphone ' + (devices.audio.indexOf(device) + 1)"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="text-xs text-gray-500 mt-4">
+                    Changes apply immediately to your stream.
+                </div>
+            </div>
         </div>
     </div>
 
@@ -256,6 +308,12 @@
                 messages: [],
                 newMessage: '',
                 showChat: true,
+                showSettings: false,
+
+                // Device selection
+                devices: { video: [], audio: [] },
+                selectedVideoDevice: null,
+                selectedAudioDevice: null,
 
                 get gridClass() {
                     const count = Object.keys(this.peers).length + 1;
@@ -684,6 +742,124 @@
                         }
                         sessionStorage.removeItem('room_{{ $room->code }}_token');
                         window.location.href = '/';
+                    }
+                },
+
+                async openSettings() {
+                    try {
+                        // Request permissions first to get device labels
+                        if (!this.localStream) {
+                            await this.startLocalStream();
+                        }
+
+                        const deviceList = await navigator.mediaDevices.enumerateDevices();
+
+                        this.devices.video = deviceList.filter(d => d.kind === 'videoinput');
+                        this.devices.audio = deviceList.filter(d => d.kind === 'audioinput');
+
+                        // Set current selections based on active tracks
+                        if (this.localStream) {
+                            const videoTrack = this.localStream.getVideoTracks()[0];
+                            const audioTrack = this.localStream.getAudioTracks()[0];
+
+                            if (videoTrack) {
+                                const videoSettings = videoTrack.getSettings();
+                                this.selectedVideoDevice = videoSettings.deviceId || '';
+                            }
+                            if (audioTrack) {
+                                const audioSettings = audioTrack.getSettings();
+                                this.selectedAudioDevice = audioSettings.deviceId || '';
+                            }
+                        }
+
+                        this.showSettings = true;
+                    } catch (e) {
+                        console.error('Failed to enumerate devices:', e);
+                        alert('Could not access device list. Please check permissions.');
+                    }
+                },
+
+                async switchVideoDevice() {
+                    if (!this.selectedVideoDevice) return;
+
+                    try {
+                        // Stop current video track
+                        if (this.localStream) {
+                            this.localStream.getVideoTracks().forEach(t => t.stop());
+                        }
+
+                        // Get new video stream with selected device
+                        const newStream = await navigator.mediaDevices.getUserMedia({
+                            video: { deviceId: { exact: this.selectedVideoDevice } },
+                            audio: false,
+                        });
+
+                        const newVideoTrack = newStream.getVideoTracks()[0];
+
+                        // Replace track in local stream
+                        if (this.localStream) {
+                            const oldVideoTrack = this.localStream.getVideoTracks()[0];
+                            if (oldVideoTrack) {
+                                this.localStream.removeTrack(oldVideoTrack);
+                            }
+                            this.localStream.addTrack(newVideoTrack);
+                        } else {
+                            this.localStream = newStream;
+                        }
+
+                        // Update video elements
+                        this.assignLocalStream();
+
+                        // Replace track for all peer connections
+                        this.replaceTrackForPeers(newVideoTrack);
+
+                        console.log('Switched to camera:', this.selectedVideoDevice);
+                    } catch (e) {
+                        console.error('Failed to switch video device:', e);
+                        alert('Could not switch camera. Please try again.');
+                    }
+                },
+
+                async switchAudioDevice() {
+                    if (!this.selectedAudioDevice) return;
+
+                    try {
+                        // Stop current audio track
+                        if (this.localStream) {
+                            this.localStream.getAudioTracks().forEach(t => t.stop());
+                        }
+
+                        // Get new audio stream with selected device
+                        const newStream = await navigator.mediaDevices.getUserMedia({
+                            video: false,
+                            audio: { deviceId: { exact: this.selectedAudioDevice } },
+                        });
+
+                        const newAudioTrack = newStream.getAudioTracks()[0];
+
+                        // Replace track in local stream
+                        if (this.localStream) {
+                            const oldAudioTrack = this.localStream.getAudioTracks()[0];
+                            if (oldAudioTrack) {
+                                this.localStream.removeTrack(oldAudioTrack);
+                            }
+                            this.localStream.addTrack(newAudioTrack);
+                        } else {
+                            this.localStream = newStream;
+                        }
+
+                        // Replace track for all peer connections
+                        Object.values(this.peerConnections).forEach(peer => {
+                            const sender = peer._pc?.getSenders()?.find(s => s.track?.kind === 'audio');
+                            if (sender) {
+                                sender.replaceTrack(newAudioTrack);
+                            }
+                        });
+
+                        console.log('Switched to microphone:', this.selectedAudioDevice);
+                    } catch (e) {
+                        console.error('Failed to switch audio device:', e);
+                        alert('Could not switch microphone. Please try again.');
                     }
                 },
             };
